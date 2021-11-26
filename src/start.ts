@@ -1,3 +1,6 @@
 import { start } from './index';
+import AppNameStrategy from './custom-strategies/app-name-strategy';
 
-start();
+start({
+    customStrategies: [new AppNameStrategy()],
+});
