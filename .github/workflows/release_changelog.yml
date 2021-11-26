@@ -1,8 +1,11 @@
 name: 'Releases'
-on:
-  push:
-    tags:
-      - 'v*'
+
+on: workflow_dispatch
+# Temporary disable main integration
+# on:
+#   push:
+#     tags:
+#       - 'v*'
 
 jobs:
   release:
