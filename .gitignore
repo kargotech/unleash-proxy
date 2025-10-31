@@ -117,3 +117,5 @@ dist
 
 # asdf
 .tool-versions
+
+.vscode/
