@@ -12,7 +12,7 @@ import type { StorageProvider } from 'unleash-client/lib/repository/storage-prov
 import type { ContextEnricher } from './enrich-context';
 import { type LogLevel, type Logger, SimpleLogger } from './logger';
 import { generateInstanceId } from './util';
-import FileStorageProvider from './repository/storage-provider-file';
+import GcsStorageProvider from './repository/storage-provider-gcs';
 
 const BACKUP_PATH: string = tmpdir();
 
@@ -345,7 +345,7 @@ export function createProxyConfig(option: IProxyOption): IProxyConfig {
         environment: option.environment || process.env.UNLEASH_ENVIRONMENT,
         projectName: option.projectName || process.env.UNLEASH_PROJECT_NAME,
         namePrefix: option.namePrefix || process.env.UNLEASH_NAME_PREFIX,
-        storageProvider: option.storageProvider || new FileStorageProvider(BACKUP_PATH),
+        storageProvider: option.storageProvider || new GcsStorageProvider(BACKUP_PATH),
         disableMetrics: false,
         logger: chooseLogger(option),
         trustProxy,

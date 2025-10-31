@@ -12,7 +12,7 @@ services:
     volumes:
       - unleash-db-data:/var/lib/postgresql/data
     ports:
-      - "5432:5432"
+      - "5439:5432"
     networks:
       - unleash-network
     healthcheck:
@@ -39,17 +39,17 @@ services:
       - unleash-network
 
   unleash-proxy:
-    image: unleashorg/unleash-proxy
+    build:
+      context: .
+      dockerfile: Dockerfile
     container_name: unleash-proxy
     restart: unless-stopped
     depends_on:
       - unleash-server
+    env_file:
+      - .env
     environment:
-      UNLEASH_URL: http://unleash-server:4242/api
-      UNLEASH_API_TOKEN: "*:development.2633b675e46d49ddba678ade7c55f445f5d8783b3327c5e02e344e26"
-      UNLEASH_PROXY_CLIENT_KEYS: some_proxy_client_key
-      UNLEASH_INSTANCE_ID: unleash-instance-001
-      UNLEASH_PROXY_SECRETS: dummysecr3t
+      UNLEASH_URL: 'http://unleash-server:4242/api'
       PROXY_PORT: 4243
     ports:
       - "4243:4243"
