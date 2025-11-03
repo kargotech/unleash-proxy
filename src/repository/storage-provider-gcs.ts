@@ -95,7 +95,7 @@ export default class GcsStorageProvider<T> implements StorageProvider<T> {
     }
 
     private getPath(key: string): string {
-        return join(this.backupPath, `/unleash-backup-${safeName(key)}.json`);
+        return `unleash-backup-${safeName(key)}.json`;
     }
 
     async set(key: string, data: T): Promise<void> {
