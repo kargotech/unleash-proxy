@@ -17,6 +17,7 @@ export function createApp(
     const config = createProxyConfig(options);
     const { logger } = config;
     logger.debug('Configuration:', config);
+    logger.info('Create proxy storage provider configuration:', config.storageProvider);
     const client =
         unleashClient ||
         (options.clientMode === 'new'
