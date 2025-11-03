@@ -84,13 +84,12 @@ export default class GcsStorageProvider<T> implements StorageProvider<T> {
 
         const response = await fetch(url);
         if (!response.ok) {
-            console.error(`Failed to fetch JSON from GCS: ${url} with response ${response.status} ${response.statusText}`);
-            throw new Error(`Failed to fetch JSON from ${url}: ${response.statusText}`);
+            const err: any = new Error(`Failed to fetch JSON from ${url}: ${response.statusText}`);
+            err.status = response.status;
+            throw err;
         }
 
         const data = await response.json();
-        console.log(`Successfully fetched JSON from GCS: ${url}`);
-        console.log(data);
         return data;
     }
 
@@ -106,19 +105,18 @@ export default class GcsStorageProvider<T> implements StorageProvider<T> {
     async get(key: string): Promise<T | undefined> {
         const path = this.getPath(key);
         console.log(`Fetching backup from GCS path: ${path}`);
-        let data;
+
         try {
-            data = await this.readPublicJsonFromGCS(path);
+            const data = await this.readPublicJsonFromGCS(path);
+            console.log(`Fetched backup data: ${JSON.stringify(data)}`);
+            return data;
         } catch (error: any) {
-            if (error.code !== 'ENOENT') {
-                throw error;
-            } else {
-                return undefined;
+            if (error.status === 404) {
+                console.log("Backup not found (404)");
+                return undefined;  // Object not found → treat as "no backup"
             }
+            console.error("Error fetching backup:", error);
+            throw error; // Other errors → rethrow
         }
-
-        console.log(`Fetched backup data: ${JSON.stringify(data)}`);
-
-        return data;
     }
 }
