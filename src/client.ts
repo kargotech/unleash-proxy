@@ -1,13 +1,21 @@
 import EventEmitter from 'events';
-import { Context, initialize, Unleash, Variant } from 'unleash-client';
-import Metrics from 'unleash-client/lib/metrics';
-import { defaultStrategies } from 'unleash-client/lib/strategy';
-import { IProxyConfig } from './config';
-import { Logger } from './logger';
+import {
+    type Context,
+    type Unleash,
+    UnleashEvents,
+    type Variant,
+} from 'unleash-client';
+import type { FeatureInterface } from 'unleash-client/lib/feature';
+import type Metrics from 'unleash-client/lib/metrics';
+import { getDefaultVariant } from 'unleash-client/lib/variant';
+import type { IProxyConfig } from './config';
+import type { Logger } from './logger';
+import { lastMetricsFetch, lastMetricsUpdate } from './prom-metrics';
 
 export type FeatureToggleStatus = {
     name: string;
     enabled: boolean;
+    impressionData?: boolean;
     variant?: Variant;
 };
 
@@ -16,10 +24,12 @@ interface VariantBucket {
 }
 
 interface Bucket {
-    start: Date;
-    stop: Date | null;
     toggles: {
-        [s: string]: { yes: number; no: number; variants?: VariantBucket };
+        [s: string]: {
+            yes?: number;
+            no?: number;
+            variants?: VariantBucket;
+        };
     };
 }
 
@@ -34,7 +44,13 @@ export interface IClient extends EventEmitter {
         toggleNames: string[],
         context: Context,
     ) => FeatureToggleStatus[];
-    registerMetrics(metrics: any): void;
+
+    getAllToggles: (context: Context) => FeatureToggleStatus[];
+
+    getFeatureToggleDefinitions(): FeatureInterface[];
+
+    registerMetrics(metrics: IMetrics): void;
+
     isReady(): boolean;
 }
 
@@ -51,47 +67,29 @@ class Client extends EventEmitter implements IClient {
 
     private ready: boolean = false;
 
-    constructor(config: IProxyConfig, init: Function = initialize) {
+    constructor(config: IProxyConfig, unleash: Unleash, metrics: Metrics) {
         super();
         this.unleashApiToken = config.unleashApiToken;
         this.environment = config.environment;
         this.logger = config.logger;
 
-        const customHeadersFunction = async () => ({
-            Authorization: this.unleashApiToken,
-        });
-
-        // Unleash Client instance.
-        this.unleash = init({
-            url: config.unleashUrl,
-            appName: config.unleashAppName,
-            instanceId: config.unleashInstanceId,
-            environment: this.environment,
-            refreshInterval: config.refreshInterval,
-            projectName: config.projectName,
-            strategies: config.customStrategies,
-            disableMetrics: true,
-            namePrefix: config.namePrefix,
-            tags: config.tags,
-            customHeadersFunction,
-        });
-
-        // Custom metrics Instance
-        this.metrics = new Metrics({
-            disableMetrics: config.disableMetrics,
-            appName: config.unleashAppName,
-            instanceId: config.unleashInstanceId,
-            strategies: defaultStrategies.map((s) => s.name),
-            metricsInterval: config.metricsInterval,
-            url: config.unleashUrl,
-            customHeadersFunction,
-        });
+        this.unleash = unleash;
+        this.metrics = metrics;
 
         this.metrics.on('error', (msg) => this.logger.error(`metrics: ${msg}`));
         this.unleash.on('error', (msg) => this.logger.error(msg));
         this.unleash.on('ready', () => {
             this.emit('ready');
             this.ready = true;
+            this.metrics.start();
+        });
+        this.unleash.on(UnleashEvents.Unchanged, () => {
+            lastMetricsFetch.set(new Date().getTime());
+        });
+        this.unleash.on(UnleashEvents.Changed, () => {
+            const updatedAt = new Date().getTime();
+            lastMetricsFetch.set(updatedAt);
+            lastMetricsUpdate.set(updatedAt);
         });
     }
 
@@ -107,20 +105,54 @@ class Client extends EventEmitter implements IClient {
         return context;
     }
 
+    getAllToggles(inContext: Context): FeatureToggleStatus[] {
+        this.logger.debug(
+            'Get all feature toggles for provided context',
+            inContext,
+        );
+        const context = this.fixContext(inContext);
+
+        const sessionId = context.sessionId || String(Math.random());
+        const definitions = this.unleash.getFeatureToggleDefinitions() || [];
+        return definitions.map((d) => {
+            const enabled = this.unleash.isEnabled(d.name, {
+                ...context,
+                sessionId,
+            });
+            const variant = enabled
+                ? this.unleash.getVariant(d.name, { ...context, sessionId })
+                : getDefaultVariant();
+
+            return {
+                name: d.name,
+                enabled: enabled,
+                variant: variant,
+                impressionData: d.impressionData,
+            };
+        });
+    }
+
     getEnabledToggles(inContext: Context): FeatureToggleStatus[] {
-        this.logger.info(
+        this.logger.debug(
             'Get enabled feature toggles for provided context',
             inContext,
         );
         const context = this.fixContext(inContext);
 
+        const sessionId = context.sessionId || String(Math.random());
         const definitions = this.unleash.getFeatureToggleDefinitions() || [];
         return definitions
-            .filter((d) => this.unleash.isEnabled(d.name, context))
+            .filter((d) =>
+                this.unleash.isEnabled(d.name, { ...context, sessionId }),
+            )
             .map((d) => ({
                 name: d.name,
                 enabled: true,
-                variant: this.unleash.getVariant(d.name, context),
+                variant: this.unleash.getVariant(d.name, {
+                    ...context,
+                    sessionId,
+                }),
+                impressionData: d.impressionData,
             }));
     }
 
@@ -130,14 +162,20 @@ class Client extends EventEmitter implements IClient {
     ): FeatureToggleStatus[] {
         const context = this.fixContext(inContext);
         return toggleNames.map((name) => {
+            const definition = this.unleash.getFeatureToggleDefinition(name);
             const enabled = this.unleash.isEnabled(name, context);
             this.metrics.count(name, enabled);
             return {
                 name,
                 enabled,
                 variant: this.unleash.getVariant(name, context),
+                impressionData: definition?.impressionData ?? false,
             };
         });
+    }
+
+    getFeatureToggleDefinitions(): FeatureInterface[] {
+        return this.unleash.getFeatureToggleDefinitions();
     }
 
     /*
@@ -149,14 +187,25 @@ class Client extends EventEmitter implements IClient {
         const { toggles } = metrics.bucket;
 
         Object.keys(toggles).forEach((toggleName) => {
-            const yesCount = toggles[toggleName].yes;
-            const noCount = toggles[toggleName].no;
+            const toggle = toggles[toggleName];
+            const yesCount: number = toggle.yes ?? 0;
+            const noCount: number = toggle.no ?? 0;
             [...Array(yesCount)].forEach(() =>
                 this.metrics.count(toggleName, true),
             );
             [...Array(noCount)].forEach(() =>
                 this.metrics.count(toggleName, false),
             );
+            const variants = toggle.variants;
+            if (variants) {
+                Object.entries(variants).forEach(
+                    ([variantName, variantCount]) => {
+                        [...Array(variantCount)].forEach(() =>
+                            this.metrics.countVariant(toggleName, variantName),
+                        );
+                    },
+                );
+            }
         });
     }
 

@@ -1,6 +1,7 @@
 import EventEmitter from 'events';
-import { Context } from 'unleash-client';
-import { FeatureToggleStatus, IClient } from '../client';
+import type { Context } from 'unleash-client';
+import type { FeatureInterface } from 'unleash-client/lib/feature';
+import type { FeatureToggleStatus, IClient, IMetrics } from '../client';
 
 class MockClient extends EventEmitter implements IClient {
     public apiToken: String;
@@ -9,12 +10,25 @@ class MockClient extends EventEmitter implements IClient {
 
     public toggles: FeatureToggleStatus[];
 
-    public metrics: any[] = [];
+    public metrics: IMetrics[] = [];
 
     constructor(toggles: FeatureToggleStatus[] = []) {
         super();
         this.toggles = toggles;
         this.apiToken = 'default';
+    }
+
+    getFeatureToggleDefinitions(): FeatureInterface[] {
+        return this.toggles.map((t) => ({
+            name: t.name,
+            strategies: [{ name: 'default', parameters: {}, constraints: [] }],
+            enabled: t.enabled,
+            project: 'default',
+            stale: false,
+            type: 'release',
+            variants: [],
+            impressionData: false,
+        }));
     }
 
     isReady(): boolean {
@@ -23,6 +37,11 @@ class MockClient extends EventEmitter implements IClient {
 
     setUnleashApiToken(apiToken: string): void {
         this.apiToken = apiToken;
+    }
+
+    getAllToggles(context: Context): FeatureToggleStatus[] {
+        this.queriedContexts.push(context);
+        return this.toggles;
     }
 
     getEnabledToggles(context: Context): FeatureToggleStatus[] {
@@ -40,8 +59,7 @@ class MockClient extends EventEmitter implements IClient {
         );
     }
 
-    // eslint-disable-next-line @typescript-eslint/explicit-module-boundary-types
-    registerMetrics(metrics: any): void {
+    registerMetrics(metrics: IMetrics): void {
         this.metrics.push(metrics);
     }
 }

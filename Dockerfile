@@ -1,16 +1,26 @@
-FROM node:14-alpine as builder
+FROM node:20-alpine as builder
 
 WORKDIR /unleash-proxy
 
 COPY . .
 
-RUN npm ci
+RUN corepack enable
 
-RUN npm run build
+ENV YARN_ENABLE_SCRIPTS=false
 
-RUN npm prune --production
+RUN yarn install --immutable
 
-FROM node:14-alpine
+RUN yarn build
+
+RUN yarn workspaces focus -A --production
+
+FROM node:20-alpine
+
+# Upgrade (addresses OpenSSL CVE-2023-6237 && CVE-2024-2511)
+RUN apk update && \
+    apk upgrade && \
+    apk add tini && \
+    rm -rf /var/cache/apk/*
 
 ENV NODE_ENV production
 
@@ -18,8 +28,14 @@ WORKDIR /unleash-proxy
 
 COPY --from=builder /unleash-proxy /unleash-proxy
 
-EXPOSE 4242
+RUN rm -rf /usr/local/lib/node_modules/npm/
+
+RUN chown -R node:node /unleash-proxy
+
+ENTRYPOINT ["/sbin/tini", "--"]
+
+EXPOSE 3000
 
 USER node
 
-CMD node dist/start
+CMD ./server.sh

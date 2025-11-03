@@ -1,0 +1,64 @@
+version: "3.8"
+
+services:
+  unleash-db:
+    image: kartoza/postgis:17-3.5
+    container_name: unleash-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: unleash_user
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: unleash
+    volumes:
+      - unleash-db-data:/var/lib/postgresql/data
+    ports:
+      - "5439:5432"
+    networks:
+      - unleash-network
+    healthcheck:
+      test: ["CMD-SHELL", "/usr/bin/pg_isready -U unleash_user -d unleash || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+
+  unleash-server:
+    image: unleashorg/unleash-server:5.12.4
+    container_name: unleash-server
+    restart: unless-stopped
+    depends_on:
+      unleash-db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://unleash_user:postgres@unleash-db:5432/unleash
+      LOG_LEVEL: info
+    ports:
+      - "4242:4242"
+    networks:
+      - unleash-network
+
+  unleash-proxy:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: unleash-proxy
+    restart: unless-stopped
+    depends_on:
+      - unleash-server
+    env_file:
+      - .env
+    environment:
+      UNLEASH_URL: 'http://unleash-server:4242/api'
+      PROXY_PORT: 4243
+    ports:
+      - "4243:4243"
+    networks:
+      - unleash-network
+
+volumes:
+  unleash-db-data:
+
+networks:
+  unleash-network:
+    driver: bridge
