@@ -19,9 +19,17 @@ export default class GcsStorageProvider<T> implements StorageProvider<T> {
         return `unleash-backup-${safeName(key)}.json`;
     }
 
+    private getBucketName(): string {
+        const bucketName = process.env.GCP_BUCKET_NAME || "";
+        if (!bucketName) {
+            throw new Error("Missing env var: GCP_BUCKET_NAME");
+        }
+        return bucketName;
+    }
+
     async set(key: string, data: T): Promise<void> {
         await writeFile(this.getPath(key), JSON.stringify(data));
-        const gcs = new GCSClient();
+        const gcs = new GCSClient(this.getBucketName());
         return gcs.uploadJsonToGCS(this.getPath(key));
     }
 
@@ -30,7 +38,7 @@ export default class GcsStorageProvider<T> implements StorageProvider<T> {
         console.log(`Fetching backup from GCS path: ${path}`);
 
         try {
-            const gcs = new GCSClient();
+            const gcs = new GCSClient(this.getBucketName());
             const data = await gcs.readPublicJsonFromGCS(path);
             console.log(`Fetched backup data: ${JSON.stringify(data)}`);
             return data;

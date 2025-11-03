@@ -3,31 +3,34 @@ import fs from "fs";
 import path from "path";
 
 export class GCSClient {
-    private storage: Storage;
     private bucketName: string;
 
-    constructor() {
+    constructor(bucketName: string) {
+        if (!bucketName) {
+            throw new Error('bucketName is required');
+        }
+        this.bucketName = bucketName;
+    }
+
+    private getStorage(): Storage {
         const base64Key = process.env.GCP_SA_KEY_B64;
         if (!base64Key) {
             throw new Error("Missing env var: GCP_SA_KEY_B64");
-        }
-
-        this.bucketName = process.env.GCP_BUCKET_NAME || "";
-        if (!this.bucketName) {
-            throw new Error("Missing env var: GCP_BUCKET_NAME");
         }
 
         // Decode base64 JSON key
         const keyJson = JSON.parse(Buffer.from(base64Key, "base64").toString("utf8"));
 
         // Initialize GCS client once
-        this.storage = new Storage({
+        const storage = new Storage({
             credentials: {
                 client_email: keyJson.client_email,
                 private_key: keyJson.private_key,
             },
             projectId: keyJson.project_id,
         });
+
+        return storage;
     }
 
     /**
@@ -44,7 +47,8 @@ export class GCSClient {
         const destName = destination ?? path.basename(filePath);
 
         try {
-            await this.storage.bucket(this.bucketName).upload(filePath, {
+            const storage = this.getStorage();
+            await storage.bucket(this.bucketName).upload(filePath, {
                 destination: destName,
                 gzip: false,
                 metadata: {
@@ -72,8 +76,8 @@ export class GCSClient {
      */
     public async readPublicJsonFromGCS<T = any>(objectName: string): Promise<T> {
         try {
-            const data = await this.storage
-                .bucket(this.bucketName)
+            const storage = this.getStorage();
+            const data = await storage.bucket(this.bucketName)
                 .file(objectName)
                 .download();
 
