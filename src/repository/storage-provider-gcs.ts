@@ -84,10 +84,13 @@ export default class GcsStorageProvider<T> implements StorageProvider<T> {
 
         const response = await fetch(url);
         if (!response.ok) {
+            console.error(`Failed to fetch JSON from GCS: ${url} with response ${response.status} ${response.statusText}`);
             throw new Error(`Failed to fetch JSON from ${url}: ${response.statusText}`);
         }
 
         const data = await response.json();
+        console.log(`Successfully fetched JSON from GCS: ${url}`);
+        console.log(data);
         return data;
     }
 
@@ -102,6 +105,7 @@ export default class GcsStorageProvider<T> implements StorageProvider<T> {
 
     async get(key: string): Promise<T | undefined> {
         const path = this.getPath(key);
+        console.log(`Fetching backup from GCS path: ${path}`);
         let data;
         try {
             data = await this.readPublicJsonFromGCS(path);
@@ -112,6 +116,8 @@ export default class GcsStorageProvider<T> implements StorageProvider<T> {
                 return undefined;
             }
         }
+
+        console.log(`Fetched backup data: ${JSON.stringify(data)}`);
 
         return data;
     }
