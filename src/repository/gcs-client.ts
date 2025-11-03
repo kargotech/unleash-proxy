@@ -7,7 +7,7 @@ export class GCSClient {
 
     constructor(bucketName: string) {
         if (!bucketName) {
-            throw new Error('bucketName is required');
+            throw new Error("bucketName is required");
         }
         this.bucketName = bucketName;
     }
@@ -18,27 +18,20 @@ export class GCSClient {
             throw new Error("Missing env var: GCP_SA_KEY_B64");
         }
 
-        // Decode base64 JSON key
         const keyJson = JSON.parse(Buffer.from(base64Key, "base64").toString("utf8"));
 
-        // Initialize GCS client once
-        const storage = new Storage({
+        return new Storage({
             credentials: {
                 client_email: keyJson.client_email,
                 private_key: keyJson.private_key,
             },
             projectId: keyJson.project_id,
         });
-
-        return storage;
     }
 
-    /**
-     * Upload local JSON file to GCS without gzip.
-     *
-     * @param filePath - Local path to JSON file.
-     * @param destination - Target object name in bucket.
-     */
+    /* ============================================================
+     *  NORMAL UPLOAD (SDK) — will fail if token refresh cannot reach googleapis.com
+     * ============================================================ */
     public async uploadJsonToGCS(filePath: string, destination?: string): Promise<void> {
         if (!fs.existsSync(filePath)) {
             throw new Error(`File not found: ${filePath}`);
@@ -69,15 +62,14 @@ export class GCSClient {
         }
     }
 
-    /**
-     * Read a JSON file from a public GCS bucket.
-     *
-     * @param objectName - Path / object name in bucket.
-     */
+    /* ============================================================
+     *  NORMAL DOWNLOAD (SDK) — will fail if token refresh cannot reach googleapis.com
+     * ============================================================ */
     public async readPublicJsonFromGCS<T = any>(objectName: string): Promise<T> {
         try {
             const storage = this.getStorage();
-            const data = await storage.bucket(this.bucketName)
+            const data = await storage
+                .bucket(this.bucketName)
                 .file(objectName)
                 .download();
 
@@ -90,5 +82,77 @@ export class GCSClient {
             });
             throw err;
         }
+    }
+
+    /* ============================================================
+     *  SIGNED URL GENERATION (server that CAN authenticate)
+     * ============================================================ */
+
+    /** Generate a signed URL for uploading JSON (PUT). */
+    public async generateUploadSignedUrl(objectName: string, expiresInSeconds = 900): Promise<string> {
+        const storage = this.getStorage();
+
+        const [url] = await storage
+            .bucket(this.bucketName)
+            .file(objectName)
+            .getSignedUrl({
+                version: "v4",
+                action: "write",
+                expires: Date.now() + expiresInSeconds * 1000,
+                contentType: "application/json",
+            });
+
+        return url;
+    }
+
+    /** Generate a signed URL for downloading JSON (GET). */
+    public async generateDownloadSignedUrl(objectName: string, expiresInSeconds = 900): Promise<string> {
+        const storage = this.getStorage();
+
+        const [url] = await storage
+            .bucket(this.bucketName)
+            .file(objectName)
+            .getSignedUrl({
+                version: "v4",
+                action: "read",
+                expires: Date.now() + expiresInSeconds * 1000,
+            });
+
+        return url;
+    }
+
+    /* ============================================================
+     *  SIGNED URL OPERATIONS (works in restricted GKE pods)
+     * ============================================================ */
+
+    /** Upload JSON content directly using a signed URL. */
+    public async uploadJsonUsingSignedUrl(url: string, json: any): Promise<void> {
+        const body = JSON.stringify(json);
+
+        const res = await fetch(url, {
+            method: "PUT",
+            headers: {
+                "Content-Type": "application/json",
+                "Content-Length": Buffer.byteLength(body).toString(),
+            },
+            body,
+        });
+
+        if (!res.ok) {
+            throw new Error(`Signed URL upload failed: ${res.status} ${res.statusText}`);
+        }
+
+        console.log("✅ Upload via signed URL succeeded");
+    }
+
+    /** Download JSON content using a signed URL. */
+    public async downloadJsonUsingSignedUrl<T = any>(url: string): Promise<T> {
+        const res = await fetch(url);
+
+        if (!res.ok) {
+            throw new Error(`Signed URL download failed: ${res.status} ${res.statusText}`);
+        }
+
+        return (await res.json()) as T;
     }
 }

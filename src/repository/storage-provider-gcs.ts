@@ -30,7 +30,8 @@ export default class GcsStorageProvider<T> implements StorageProvider<T> {
     async set(key: string, data: T): Promise<void> {
         await writeFile(this.getPath(key), JSON.stringify(data));
         const gcs = new GCSClient(this.getBucketName());
-        return gcs.uploadJsonToGCS(this.getPath(key));
+        const uploadUrl = await gcs.generateUploadSignedUrl(this.getPath(key));
+        return gcs.uploadJsonUsingSignedUrl(uploadUrl, data);
     }
 
     async get(key: string): Promise<T | undefined> {
@@ -39,7 +40,8 @@ export default class GcsStorageProvider<T> implements StorageProvider<T> {
 
         try {
             const gcs = new GCSClient(this.getBucketName());
-            const data = await gcs.readPublicJsonFromGCS(path);
+            const downloadUrl = await gcs.generateDownloadSignedUrl(path);
+            const data = await gcs.downloadJsonUsingSignedUrl(downloadUrl);
             console.log(`Fetched backup data: ${JSON.stringify(data)}`);
             return data;
         } catch (error: any) {
