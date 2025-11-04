@@ -102,6 +102,8 @@ export class GCSClient {
                 contentType: "application/json",
             });
 
+        console.log(`Generated signed upload URL (expires in ${expiresInSeconds}s): ${url}`);
+
         return url;
     }
 
@@ -117,6 +119,8 @@ export class GCSClient {
                 action: "read",
                 expires: Date.now() + expiresInSeconds * 1000,
             });
+
+        console.log(`Generated signed download URL (expires in ${expiresInSeconds}s): ${url}`);
 
         return url;
     }
@@ -142,7 +146,7 @@ export class GCSClient {
             throw new Error(`Signed URL upload failed: ${res.status} ${res.statusText}`);
         }
 
-        console.log("✅ Upload via signed URL succeeded");
+        console.log("Upload via signed URL succeeded");
     }
 
     /** Download JSON content using a signed URL. */
