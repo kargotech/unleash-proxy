@@ -39,6 +39,7 @@ export default class GcsStorageProvider<T> implements StorageProvider<T> {
         console.log(`Fetching backup from GCS path: ${path}`);
 
         const MAX_RETRIES = 5;
+        const BASE_DELAY_MS = 5000;
         let attempt = 0;
 
         while (attempt < MAX_RETRIES) {
@@ -46,10 +47,8 @@ export default class GcsStorageProvider<T> implements StorageProvider<T> {
                 const gcs = new GCSClient(this.getBucketName());
                 const downloadUrl = await gcs.generateDownloadSignedUrl(path);
                 const data = await gcs.downloadJsonUsingSignedUrl(downloadUrl);
-
                 console.log(`Fetched backup data: ${JSON.stringify(data)}`);
                 return data;
-
             } catch (error: any) {
                 // Special case: return undefined if object not found
                 if (error?.status === 404) {
@@ -65,8 +64,8 @@ export default class GcsStorageProvider<T> implements StorageProvider<T> {
                     throw error; // rethrow final error
                 }
 
-                // Wait with exponential backoff (1s, 2s, 4s, 8s...)
-                const delayMs = 1000 * Math.pow(2, attempt - 1);
+                // Wait with exponential backoff (5s, 10s, 20s, 40s...)
+                const delayMs = BASE_DELAY_MS * Math.pow(2, attempt - 1);
                 console.log(`Retrying in ${delayMs / 1000}s...`);
 
                 await new Promise(resolve => setTimeout(resolve, delayMs));
