@@ -38,19 +38,41 @@ export default class GcsStorageProvider<T> implements StorageProvider<T> {
         const path = this.getPath(key);
         console.log(`Fetching backup from GCS path: ${path}`);
 
-        try {
-            const gcs = new GCSClient(this.getBucketName());
-            const downloadUrl = await gcs.generateDownloadSignedUrl(path);
-            const data = await gcs.downloadJsonUsingSignedUrl(downloadUrl);
-            console.log(`Fetched backup data: ${JSON.stringify(data)}`);
-            return data;
-        } catch (error: any) {
-            if (error.status === 404) {
-                console.log("Backup not found (404)");
-                return undefined;  // Object not found → treat as "no backup"
+        const MAX_RETRIES = 5;
+        let attempt = 0;
+
+        while (attempt < MAX_RETRIES) {
+            try {
+                const gcs = new GCSClient(this.getBucketName());
+                const downloadUrl = await gcs.generateDownloadSignedUrl(path);
+                const data = await gcs.downloadJsonUsingSignedUrl(downloadUrl);
+
+                console.log(`Fetched backup data: ${JSON.stringify(data)}`);
+                return data;
+
+            } catch (error: any) {
+                // Special case: return undefined if object not found
+                if (error?.status === 404) {
+                    console.log("Backup not found (404)");
+                    return undefined;
+                }
+
+                attempt++;
+                console.error(`Attempt ${attempt} failed:`, error?.message || error);
+
+                if (attempt >= MAX_RETRIES) {
+                    console.error(`All ${MAX_RETRIES} attempts failed.`);
+                    throw error; // rethrow final error
+                }
+
+                // Wait with exponential backoff (1s, 2s, 4s, 8s...)
+                const delayMs = 1000 * Math.pow(2, attempt - 1);
+                console.log(`Retrying in ${delayMs / 1000}s...`);
+
+                await new Promise(resolve => setTimeout(resolve, delayMs));
             }
-            console.error("Error fetching backup:", error);
-            throw error; // Other errors → rethrow
         }
+
+        return undefined; // unreachable but satisfies TS
     }
 }
