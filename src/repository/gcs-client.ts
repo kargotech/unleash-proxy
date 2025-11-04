@@ -151,6 +151,8 @@ export class GCSClient {
 
     /** Download JSON content using a signed URL. */
     public async downloadJsonUsingSignedUrl<T = any>(url: string): Promise<T> {
+        const testJson = await (await fetch("https://dummyjson.com/test")).json(); // to make sure fetch is not tree-shaken
+        console.log("Fetch is available, dummyjson test:", testJson);
         const res = await fetch(url);
 
         if (!res.ok) {
