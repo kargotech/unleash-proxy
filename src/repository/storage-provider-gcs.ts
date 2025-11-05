@@ -16,7 +16,7 @@ export default class GcsStorageProvider<T> implements StorageProvider<T> {
     }
 
     private getPath(key: string): string {
-        return `unleash-backup-${safeName(key)}.json`;
+        return `${safeName(key)}-backup.json`;
     }
 
     private getBucketName(): string {
