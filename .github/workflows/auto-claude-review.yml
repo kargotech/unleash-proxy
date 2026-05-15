@@ -17,3 +17,6 @@ jobs:
           REPO: ${{ github.repository }}
         run: |
           gh pr comment "$PR_NUMBER" --repo "$REPO" --body "@claude review"
+  claude-review:
+    uses: kargotech/.github/.github/workflows/reusable-claude-code-review.yml@master
+    secrets: inherit
