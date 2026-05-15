@@ -1,0 +1,19 @@
+name: Auto Claude Review
+
+on:
+  pull_request:
+    types: [opened]
+
+jobs:
+  comment:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Comment @claude review on new PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          gh pr comment "$PR_NUMBER" --repo "$REPO" --body "@claude review"
